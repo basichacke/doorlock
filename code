@@ -1,0 +1,103 @@
+#include <ESP8266WiFi.h>
+#include <Keypad.h>
+#include <Servo.h>
+
+
+Servo lockServo;
+int servoPin = D4; 
+
+
+const char* ssid = "YourWiFiName";
+const char* password = "YourWiFiPassword";
+
+
+const byte ROWS = 4;
+const byte COLS = 4;
+char keys[ROWS][COLS] = {
+  {'1','2','3','A'},
+  {'4','5','6','B'},
+  {'7','8','9','C'},
+  {'*','0','#','D'}
+};
+byte rowPins[ROWS] = {D1, D2, D3, D5};
+byte colPins[COLS] = {D6, D7, D8, D0};
+
+Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
+
+
+String generatedOTP = "";
+String enteredOTP = "";
+unsigned long otpExpiry = 0;
+bool doorUnlocked = false;
+
+
+String generateOTP() {
+  String otp = "";
+  for (int i = 0; i < 4; i++) {
+    otp += String(random(0, 10));
+  }
+  return otp;
+}
+
+void lockDoor() {
+  lockServo.write(0);
+  doorUnlocked = false;
+  Serial.println("Door Locked");
+}
+
+void unlockDoor() {
+  lockServo.write(90);
+  doorUnlocked = true;
+  Serial.println("Door Unlocked");
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Connected");
+
+  lockServo.attach(servoPin);
+  lockDoor();
+  
+  randomSeed(analogRead(A0));
+
+  generatedOTP = generateOTP();
+  otpExpiry = millis() + 60000; 
+  Serial.println("Generated OTP: " + generatedOTP);
+  Serial.println("(In real project, send via SMS or Email)");
+}
+
+void loop() {
+  if (millis() > otpExpiry && !doorUnlocked) {
+    generatedOTP = generateOTP();
+    otpExpiry = millis() + 60000;
+    Serial.println("New OTP Generated: " + generatedOTP);
+  }
+  
+  char key = keypad.getKey();
+  if (key) {
+    if (key == '#') {
+      if (enteredOTP == generatedOTP && millis() < otpExpiry) {
+        Serial.println("OTP Correct!");
+        unlockDoor();
+        delay(5000);
+        lockDoor();
+      } else {
+        Serial.println("Wrong OTP or Expired!");
+      }
+      enteredOTP = "";
+    } else if (key == '*') {
+      enteredOTP = "";
+      Serial.println("Cleared input");
+    } else {
+      enteredOTP += key;
+      Serial.println("Entered: " + enteredOTP);
+    }
+  }
+}
